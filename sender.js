@@ -7,14 +7,13 @@ const Wallet = require('./wallet');
 const config = require('./config/config');
 const utils = require('./utils/utils');
 
-class Sender extends Wallet {
-    constructor(privateKeyString) {
-        super(privateKeyString);
+class Sender {
+    constructor() {
         this.receivers = [];
     }
 
-    async convertToTokenAmount(amount, mint) {
-        const mintInfo = await getMint(this.connection, mint);
+    async convertToTokenAmount(amount, mint, connection) {
+        const mintInfo = await getMint(connection, mint);
         return new BN(Math.floor(amount * Math.pow(10, mintInfo.decimals)));
     }
 
@@ -67,7 +66,7 @@ class Sender extends Wallet {
 
         try {
             await this.loadReceivers();
-            const senders = await this.loadWallets();
+            const wallets = await this.loadWallets();
 
             const tokenType = await this.question(rl, 'Select token type (1 - SOL, 2 - SPL): ');
             let mint = null;
@@ -76,7 +75,7 @@ class Sender extends Wallet {
                 const mintAddress = await this.question(rl, 'Enter SPL token address: ');
                 mint = new PublicKey(mintAddress);
                 try {
-                    const mintInfo = await getMint(this.connection, mint);
+                    const mintInfo = await getMint(wallets[0].connection, mint);
                     decimals = mintInfo.decimals;
                 } catch (e) {
                     throw new Error('Invalid token address');
@@ -101,42 +100,42 @@ ${tokenType === '2' ? `- Token address: ${mint.toBase58()}\n` : ''}- Number of r
 - Amount: ${amount}${amountType === '2' ? '%' : (tokenType === '1' ? ' SOL' : ' tokens')}
 - Max execution time: ${config.MAX_TIME} seconds\n`);
 
-            for (const sender of senders) {
+            for (const wallet of wallets) {
                 let lamports;
                 let actualAmount;
                 try {
                     if (mint) {
-                        const balance = await sender.splBalance(mint);
+                        const balance = await wallet.splBalance(mint);
                         if (!balance || new BN(balance).isZero()) {
-                            logger.warn(`${sender.keyPair.publicKey.toBase58()} | Insufficient SPL token balance`);
+                            logger.warn(`${wallet.keyPair.publicKey.toBase58()} | Insufficient SPL token balance`);
                             continue; // Skip wallet
                         }
                         lamports = amountType === '2' ?
                             new BN(balance).mul(new BN(amount)).div(new BN(100)) :
-                            await this.convertToTokenAmount(amount, mint);
+                            await this.convertToTokenAmount(amount, mint, wallet.connection);
                         const wholePart = lamports.div(new BN(10).pow(new BN(decimals)));
                         const fractionalPart = lamports.mod(new BN(10).pow(new BN(decimals))).toString().padStart(decimals, '0');
                         actualAmount = `${wholePart.toString()}.${fractionalPart}`;
                     } else {
-                        const balance = await sender.solBalance();
+                        const balance = await wallet.solBalance();
                         if (!balance || new BN(balance).isZero()) {
-                            logger.warn(`${sender.keyPair.publicKey.toBase58()} | Insufficient SOL balance`);
+                            logger.warn(`${wallet.keyPair.publicKey.toBase58()} | Insufficient SOL balance`);
                             continue; // Skip wallet
                         }
                         if (amountType === '2') {
                             const transaction = new Transaction();
                             transaction.add(SystemProgram.transfer({
-                                fromPubkey: sender.keyPair.publicKey,
-                                toPubkey: sender.keyPair.publicKey,
+                                fromPubkey: wallet.keyPair.publicKey,
+                                toPubkey: wallet.keyPair.publicKey,
                                 lamports: 0,
                             }));
 
-                            const latestBlockhash = await sender.connection.getLatestBlockhash();
+                            const latestBlockhash = await wallet.connection.getLatestBlockhash();
                             transaction.recentBlockhash = latestBlockhash.blockhash;
-                            transaction.feePayer = sender.keyPair.publicKey;
+                            transaction.feePayer = wallet.keyPair.publicKey;
 
                             const message = transaction.compileMessage();
-                            const fees = await sender.connection.getFeeForMessage(message);
+                            const fees = await wallet.connection.getFeeForMessage(message);
                             lamports = new BN(balance).mul(new BN(amount)).div(new BN(100));
                             if (amount === 100) {
                                 lamports = lamports.sub(new BN(fees.value));
@@ -159,21 +158,21 @@ ${tokenType === '2' ? `- Token address: ${mint.toBase58()}\n` : ''}- Number of r
                             setTimeout(async () => {
                                 try {
                                     const currentBalance = mint ? 
-                                        await sender.splBalance(mint) : 
-                                        await sender.solBalance();
+                                        await wallet.splBalance(mint) : 
+                                        await wallet.solBalance();
 
                                     if (!currentBalance || new BN(currentBalance).lt(lamports)) {
-                                        throw new Error(`${sender.keyPair.publicKey.toBase58()} | Insufficient ${mint ? 'tokens' : 'SOL'} for sending`);
+                                        throw new Error(`${wallet.keyPair.publicKey.toBase58()} | Insufficient ${mint ? 'tokens' : 'SOL'} for sending`);
                                     }
 
-                                    await sender.transfer(receiver, lamports, mint);
+                                    await wallet.transfer(receiver, lamports, mint);
                                     const timeSpent = Math.floor((Date.now() - startTime) / 1000);
                                     const amountStr = mint ? 
                                         `${actualAmount} tokens` : 
                                         `${actualAmount} SOL`;
-                                    logger.success(`${sender.keyPair.publicKey.toBase58()} => ${receiver} Sent ${amountStr}`);
+                                    logger.success(`${wallet.keyPair.publicKey.toBase58()} => ${receiver} Sent ${amountStr}`);
                                 } catch (error) {
-                                    logger.fail(`${sender.keyPair.publicKey.toBase58()} | ${error.stack}`);
+                                    logger.fail(`${wallet.keyPair.publicKey.toBase58()} | ${error.stack}`);
                                 }
                                 resolve();
                             }, delay);
@@ -181,9 +180,9 @@ ${tokenType === '2' ? `- Token address: ${mint.toBase58()}\n` : ''}- Number of r
                     });
 
                     await Promise.all(promises);
-                    logger.info(`${sender.keyPair.publicKey.toBase58()} | All transactions completed`);
+                    logger.info(`${wallet.keyPair.publicKey.toBase58()} | All transactions completed`);
                 } catch (error) {
-                    logger.error(`${sender.keyPair.publicKey.toBase58()} | ${error.stack}`);
+                    logger.error(`${wallet.keyPair.publicKey.toBase58()} | ${error.stack}`);
                 }
             }
 
@@ -208,7 +207,5 @@ ${tokenType === '2' ? `- Token address: ${mint.toBase58()}\n` : ''}- Number of r
     }
 }
 
-
-
-const sender = new Sender(config.SENDER_PRIVATE_KEY);
+const sender = new Sender();
 sender.startDistribution(); 
