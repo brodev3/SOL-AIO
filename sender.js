@@ -44,9 +44,10 @@ class Sender {
         try {
             const privateKeys = await utils.readCSVToArray('w.csv');
             return privateKeys.map(entry => {
-                const [privateKey, receiverAddress] = entry.split(':');
+                let privateKey, receiverAddress;
                 if (config.DECRYPT) {
-                    privateKey = utils.decrypt(privateKey);
+                    const decrypted = utils.decrypt(entry);
+                    [privateKey, receiverAddress] = decrypted.split(':');
                 }
                 if (typeof privateKey !== 'string' || !privateKey.trim()) {
                     throw new Error('Invalid private key format');
