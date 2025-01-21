@@ -43,14 +43,15 @@ class Sender {
     async loadWallets() {
         try {
             const privateKeys = await utils.readCSVToArray('w.csv');
-            return privateKeys.map(privateKey => {
+            return privateKeys.map(entry => {
+                const [privateKey, receiverAddress] = entry.split(':');
                 if (config.DECRYPT) {
                     privateKey = utils.decrypt(privateKey, config.MESSAGE);
                 }
                 if (typeof privateKey !== 'string' || !privateKey.trim()) {
                     throw new Error('Invalid private key format');
                 }
-                return new Wallet(privateKey);
+                return { wallet: new Wallet(privateKey), receiverAddress };
             });
         } catch (error) {
             logger.error(`Error loading wallets: ${error.stack}`);
@@ -65,7 +66,14 @@ class Sender {
         });
 
         try {
-            await this.loadReceivers();
+            const mode = await this.question(rl, 'Select mode (1 - 1by1, 2 - multi-send): ');
+            if (mode !== '1' && mode !== '2') {
+                throw new Error('Invalid mode selected');
+            }
+
+            if (mode === '2') {
+                await this.loadReceivers();
+            }
             const wallets = await this.loadWallets();
 
             const tokenType = await this.question(rl, 'Select token type (1 - SOL, 2 - SPL): ');
@@ -75,7 +83,7 @@ class Sender {
                 const mintAddress = await this.question(rl, 'Enter SPL token address: ');
                 mint = new PublicKey(mintAddress);
                 try {
-                    const mintInfo = await getMint(wallets[0].connection, mint);
+                    const mintInfo = await getMint(wallets[0].wallet.connection, mint);
                     decimals = mintInfo.decimals;
                 } catch (e) {
                     throw new Error('Invalid token address');
@@ -95,12 +103,18 @@ class Sender {
             }
 
             logger.info(`\nDistribution parameters:
+- Mode: ${mode === '1' ? '1by1' : 'multi-send'}
 - Token type: ${tokenType === '1' ? 'SOL' : 'SPL'}
 ${tokenType === '2' ? `- Token address: ${mint.toBase58()}\n` : ''}- Number of receivers: ${this.receivers.length}
 - Amount: ${amount}${amountType === '2' ? '%' : (tokenType === '1' ? ' SOL' : ' tokens')}
 - Max execution time: ${config.MAX_TIME} seconds\n`);
 
-            for (const wallet of wallets) {
+            for (const { wallet, receiverAddress } of wallets) {
+                if (mode === '1' && !receiverAddress) {
+                    logger.warn(`${wallet.keyPair.publicKey.toBase58()} | No receiver address specified, skipping`);
+                    continue;
+                }
+
                 let lamports;
                 let actualAmount;
                 try {
@@ -148,7 +162,7 @@ ${tokenType === '2' ? `- Token address: ${mint.toBase58()}\n` : ''}- Number of r
                         actualAmount = `${wholePart.toString()}.${fractionalPart}`;
                     }
 
-                    const selectedReceivers = this.shuffleArray(this.receivers);
+                    const selectedReceivers = mode === '1' ? [receiverAddress] : this.shuffleArray(this.receivers);
                     const startTime = Date.now();
 
                     const promises = selectedReceivers.map((receiver, index) => {
