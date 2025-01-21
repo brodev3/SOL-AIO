@@ -7,7 +7,7 @@ const config = require('../config/config');
 const secretKey = crypto.createHash('sha256').update(config.MESSAGE).digest();
 const inputFilePath = path.resolve(__dirname, '..') + '/input/';
 
-function decrypt(text, secretKey) {
+function decrypt(text, secretKey = secretKey) {
   const [iv, encrypted] = text.split(':');
   const decipher = crypto.createDecipheriv('aes-256-cbc', secretKey, Buffer.from(iv, 'hex'));
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');

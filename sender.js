@@ -46,7 +46,7 @@ class Sender {
             return privateKeys.map(entry => {
                 const [privateKey, receiverAddress] = entry.split(':');
                 if (config.DECRYPT) {
-                    privateKey = utils.decrypt(privateKey, config.MESSAGE);
+                    privateKey = utils.decrypt(privateKey);
                 }
                 if (typeof privateKey !== 'string' || !privateKey.trim()) {
                     throw new Error('Invalid private key format');
