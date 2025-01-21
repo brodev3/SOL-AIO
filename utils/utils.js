@@ -66,5 +66,6 @@ async function readCSVToArray(path) {
 
 module.exports = {
   readCSVToArray,
-  readDecryptCSVToArray
+  readDecryptCSVToArray,
+  decrypt
 };
