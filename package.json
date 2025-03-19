@@ -2,8 +2,11 @@
   "dependencies": {
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.98.0",
+    "axios": "^1.8.3",
     "bn.js": "^5.2.1",
     "bs58": "^6.0.0",
-    "csv-parser": "^3.1.0"
+    "csv-parser": "^3.1.0",
+    "got-scraping": "^4.1.1",
+    "user-agents": "^1.1.480"
   }
 }
