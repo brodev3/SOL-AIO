@@ -49,6 +49,9 @@ class Sender {
                     const decrypted = utils.decrypt(entry);
                     [privateKey, receiverAddress] = decrypted.split(':');
                 }
+                else {
+                    [privateKey, receiverAddress] = entry.split(':');
+                }
                 if (typeof privateKey !== 'string' || !privateKey.trim()) {
                     throw new Error('Invalid private key format');
                 }
